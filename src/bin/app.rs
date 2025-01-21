@@ -1,12 +1,12 @@
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-    sync::Arc,
-};
+use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 
-use adapter::{database::connect_database_with, redis::RedisClient};
+use adapter::database::connect_database_with;
+use adapter::redis::RedisClient;
 use anyhow::Result;
 use api::route::{auth, v1};
-use axum::Router;
+
+use axum::{http::Method, Router};
 use registry::AppRegistry;
 use shared::config::AppConfig;
 use tokio::net::TcpListener;
@@ -20,6 +20,16 @@ use anyhow::Context;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tower_http::LatencyUnit;
 use tracing::Level;
+
+use tower_http::cors::{self, CorsLayer};
+
+// cors 関数を追加
+fn cors() -> CorsLayer {
+    CorsLayer::new()
+        .allow_headers(cors::Any)
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_origin(cors::Any)
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -51,7 +61,6 @@ fn init_logger() -> Result<()> {
 async fn bootstrap() -> Result<()> {
     let app_config = AppConfig::new()?;
     let pool = connect_database_with(&app_config.database);
-
     let kv = Arc::new(RedisClient::new(&app_config.redis)?);
 
     let registry = AppRegistry::new(pool, kv, app_config);
@@ -69,6 +78,7 @@ async fn bootstrap() -> Result<()> {
                         .latency_unit(LatencyUnit::Millis),
                 ),
         )
+        .layer(cors())
         .with_state(registry);
 
     let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8080);
